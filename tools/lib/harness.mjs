@@ -1,8 +1,10 @@
 // Shared puppeteer harness for Cozy Room QA tooling.
 // Two rendering backends:
-//   * default - headless Chrome inside WSL. CPU only: WSL exposes the GPU as D3D12
-//     (/dev/dxg) and Mesa ships no D3D12 driver here, so ANGLE always lands on
-//     SwiftShader. Fine for correctness checks, but ~1-2 fps at 1280x720.
+//   * default - headless Chrome inside WSL. CPU only: headless Chrome initialises EGL
+//     through the surfaceless/GBM path, which WSL cannot serve, so ANGLE lands on
+//     SwiftShader. Fine for correctness checks, but ~1 fps at 1280x720.
+//   * LOCAL_GPU=1 - same local Chrome but windowed on the WSLg display, which does use
+//     the Mesa D3D12 driver (see WSL_GPU.md): 60 fps, effective quality "high".
 //   * CDP_URL=http://127.0.0.1:95xx - Chrome/Edge running on the Windows host
 //     (`node tools/host-gpu.mjs start`). Real GPU through ANGLE/D3D11, 60+ fps,
 //     and quality "high" is no longer auto-downgraded.
@@ -67,17 +69,22 @@ export async function launch({ width = 960, height = 540, dpr = 1 } = {}) {
     const remote = await puppeteer.connect({ browserURL: CDP_URL, defaultViewport: null });
     return adopt(remote, { width, height, deviceScaleFactor: dpr });
   }
+  // LOCAL_GPU=1 uses the distro/ANGLE-GL stack instead of SwiftShader. Once Mesa's
+  // D3D12 driver is wired up in WSL (see docs/WSL_GPU.md) this renders on the card.
+  const glFlags = process.env.LOCAL_GPU
+    ? ['--use-gl=angle', '--use-angle=gl', '--ignore-gpu-blocklist', '--enable-gpu-rasterization']
+    : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
   const browser = await puppeteer.launch({
     executablePath: CHROME,
-    headless: 'new',
+    // LOCAL_GPU needs a real display (WSLg :0): headless Chrome on Linux cannot use
+    // the D3D12 driver's surfaceless path, but a windowed one renders on the GPU and
+    // is still fully scriptable over CDP.
+    headless: process.env.LOCAL_GPU ? false : 'new',
     protocolTimeout: 600000,
     args: [
       '--no-sandbox',
       '--disable-dev-shm-usage',
-      '--use-gl=angle',
-      '--use-angle=swiftshader',
-      '--enable-unsafe-swiftshader',
-      '--ignore-gpu-blocklist',
+      ...glFlags,
       '--enable-webgl',
       '--hide-scrollbars',
       '--mute-audio',

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // GPU / hardware-acceleration probe.
 //
-//   node tools/gpucheck.mjs                 # probe the WSL Chrome (software by default)
+//   node tools/gpucheck.mjs                 # probe WSL Chrome (SwiftShader by default)
+//   LOCAL_GPU=1 node tools/gpucheck.mjs     # probe WSL Chrome on the GPU (Mesa D3D12)
 //   CDP_URL=http://127.0.0.1:9222 node tools/gpucheck.mjs
 //                                           # probe Chrome/Edge running on the Windows
 //                                           # host (full RTX GPU through D3D11/D3D12)
@@ -9,8 +10,7 @@
 // Prints the unmasked WebGL renderer, WebGL limits, the effective quality tier the
 // game picked, frame pacing over ~3 s, and optionally writes a screenshot.
 import fs from 'node:fs';
-import puppeteer from 'puppeteer-core';
-import { CHROME, resolveUrl, ensureDir, sleep } from './lib/harness.mjs';
+import { launch, resolveUrl, ensureDir, sleep, BASE_URL } from './lib/harness.mjs';
 
 const CDP_URL = process.env.CDP_URL || '';
 const URL_ = process.env.URL || '/?hud=1&nostart=1';
@@ -20,35 +20,14 @@ const MS = Number(process.env.MS || 3000);
 const SHOT = process.env.SHOT || '';
 
 async function open() {
-  if (CDP_URL) {
-    const browser = await puppeteer.connect({ browserURL: CDP_URL, defaultViewport: null });
-    const page = await browser.newPage();
-    await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
-    return { browser, page, mode: `cdp ${CDP_URL}` };
-  }
-  const browser = await puppeteer.launch({
-    executablePath: CHROME,
-    headless: 'new',
-    protocolTimeout: 600000,
-    args: [
-      '--no-sandbox',
-      '--disable-dev-shm-usage',
-      '--ignore-gpu-blocklist',
-      '--enable-webgl',
-      '--enable-gpu-rasterization',
-      '--enable-zero-copy',
-      '--use-angle=vulkan',
-      '--enable-features=Vulkan',
-      '--hide-scrollbars',
-      '--mute-audio',
-      '--disable-background-timer-throttling',
-      '--disable-renderer-backgrounding',
-      `--window-size=${W},${H}`
-    ],
-    defaultViewport: { width: W, height: H, deviceScaleFactor: 1 }
-  });
+  // One code path with the rest of the tooling: CDP_URL -> host GPU, LOCAL_GPU=1 ->
+  // the WSL GL stack (Mesa D3D12), otherwise SwiftShader.
+  const browser = await launch({ width: W, height: H });
   const page = await browser.newPage();
-  return { browser, page, mode: `local ${CHROME}` };
+  await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 }).catch(() => {});
+  const backend = process.env.CDP_URL ? `cdp ${process.env.CDP_URL}`
+    : process.env.LOCAL_GPU ? 'local (GL/D3D12)' : 'local (software)';
+  return { browser, page, mode: `${backend} -> ${BASE_URL}` };
 }
 
 const info = async (page) => page.evaluate(() => {

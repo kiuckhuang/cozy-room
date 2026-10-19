@@ -39,33 +39,38 @@ npm run build                 # rebuild docs/ (the GitHub Pages build)
 ```
 
 ### Hardware acceleration (GPU)
-The game renders with WebGL2 and runs on the GPU in any normal desktop browser. Inside a
-**WSL2 Linux** browser it does not — that is an environment limit, not a game bug. Measured on
-this machine (RTX 5090, Windows 11 + WSL2):
+The game renders with WebGL2, so it runs on the GPU wherever a hardware GL/Vulkan driver exists.
+On this machine (RTX 5090, Windows 11 + WSL2) all three paths were measured:
 
-| Browser runs on | WebGL renderer | 1280x720 |
+| Where the browser runs | WebGL renderer | 1280×720 |
 |---|---|---|
-| Windows (Chrome, D3D11) | `ANGLE (NVIDIA GeForce RTX 5090 Direct3D11)` | **60 fps** (vsync), ~116 fps uncapped at 1080p |
-| WSL2 Linux (Chrome) | SwiftShader / llvmpipe (CPU) | ~1.4 fps |
+| Windows Chrome (D3D11) | `ANGLE (NVIDIA GeForce RTX 5090 Direct3D11)` | **60 fps** (vsync), ~116 fps uncapped at 1080p and 4K |
+| WSL2 Chrome, window on WSLg | `ANGLE (Microsoft, D3D12 (NVIDIA GeForce RTX 5090), OpenGL 4.6)` | **60 fps**, `effective q=high` |
+| WSL2 Chrome, `--headless` | SwiftShader (CPU) | ~1.1 fps |
 
-WSL2 *does* expose the GPU — `/dev/dxg` exists, `nvidia-smi` reports the card and CUDA works —
-but it presents it as **D3D12**, and Mesa's `d3d12`/`dzn` drivers are not packaged in this
-distro, so Linux Chrome has no hardware GL/Vulkan path and silently falls back to SwiftShader.
-That is why the headless QA browser was slow; nothing in the game needs changing.
+WSL2 exposes the GPU as **D3D12** (`/dev/dxg`), and this distro ships no Mesa `d3d12` driver — so
+the WSL side got one built and installed (see **[WSL_GPU.md](WSL_GPU.md)**). That is what turns a
+WSL browser window into a 60 fps client; it also gives every other GUI app hardware OpenGL.
 
-- **Play with the GPU:** open the Pages link above, or `http://localhost:4173` in a Windows
-  browser while `node tools/serve.mjs` runs in WSL (mirrored networking makes it reachable).
-- **QA/perf/screenshots with the GPU:** `node tools/host-gpu.mjs start` launches headless Chrome
-  on the Windows host and prints a CDP endpoint; export it and every tool renders on the GPU:
-  ```bash
-  export CDP_URL=$(node tools/host-gpu.mjs start --quiet)
-  node tools/gpucheck.mjs                  # prints the unmasked renderer + frame pacing
-  node tools/perf.mjs --w=1280 --h=720     # 60 fps, effective q=high (no software downgrade)
-  node tools/media.mjs                     # README plates at q=high
-  node tools/host-gpu.mjs stop
-  ```
-  Without `CDP_URL` the harness still runs headless in WSL with SwiftShader — fine for
-  correctness (`npm test`), just slow.
+Headless Chrome is the remaining exception: it initialises EGL through the surfaceless/GBM path,
+which needs a DRM render node WSL does not provide, so `--headless` still falls back to
+SwiftShader. Use one of these instead:
+
+```bash
+# 1. GPU rendering inside WSL: a real Chrome window on the WSLg display
+LOCAL_GPU=1 node tools/gpucheck.mjs        # D3D12 (NVIDIA GeForce RTX 5090)
+LOCAL_GPU=1 node tools/perf.mjs --w=1280 --h=720
+
+# 2. GPU rendering on the Windows host, fully headless, over CDP
+export CDP_URL=$(node tools/host-gpu.mjs start --quiet)
+node tools/gpucheck.mjs                    # unmasked renderer + frame pacing
+node tools/perf.mjs --w=1280 --h=720       # 60 fps, effective q=high
+node tools/media.mjs                       # README plates at q=high
+node tools/host-gpu.mjs stop
+```
+
+Playing: use the Pages link above, a browser window on WSLg, or `http://localhost:4173` in a
+Windows browser while `node tools/serve.mjs` runs in WSL (mirrored networking).
 
 ### Controls
 | Input | Action |
@@ -143,6 +148,7 @@ tests/smoke.mjs            runtime smoke test (34 checks)
 tests/nav.mjs              reachability/navigation test
 docs/                      portable offline build served by GitHub Pages
 media/                     screenshots used in this README
+WSL_GPU.md                 how hardware OpenGL was enabled in WSL2 (Mesa D3D12)
 ```
 
 ### Verification
@@ -152,10 +158,13 @@ media/                     screenshots used in this README
 - `node tools/shotset.mjs` — eight curated 960×540 screenshots + contact sheet.
 - `node tools/gpucheck.mjs` — unmasked WebGL renderer, quality tier and frame pacing.
 - `node tools/media.mjs` — regenerates the README plates (`media/`) at `?q=high&force=1`.
+- `LOCAL_GPU=1 node tools/gpucheck.mjs` — same probe against the WSL GPU (`D3D12 (NVIDIA
+  GeForce RTX 5090)`), see [WSL_GPU.md](WSL_GPU.md).
 - `node tools/screenshot.mjs <url> <out.png> [waitMs]` — flexible single shot.
 - Boots with empty `window.__ERRORS__` and no page/console errors.
-- `node tests/smoke.mjs` passes **34/34** both on the WSL SwiftShader backend and on the host GPU
-  through `CDP_URL` (measured 60 fps vsync-capped at 1280×720, `effective q=high`).
+- `node tests/smoke.mjs` passes **34/34** on all three backends: WSL SwiftShader, WSL GPU
+  (`LOCAL_GPU=1`) and the Windows host GPU (`CDP_URL`) — 60 fps vsync-capped at 1280×720 with
+  `effective q=high`.
 
 ### Licences
 Code is released under the **MIT License** (see `LICENSE`). Third-party notices — three.js
