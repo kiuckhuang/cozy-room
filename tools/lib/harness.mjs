@@ -1,12 +1,17 @@
 // Shared puppeteer harness for Cozy Room QA tooling.
-// Software rendering (SwiftShader) is slow: always run one browser at a time
-// and use generous timeouts. Headless Chrome + ANGLE/SwiftShader is the only
-// renderer available on this box.
+// Two rendering backends:
+//   * default - headless Chrome inside WSL. CPU only: WSL exposes the GPU as D3D12
+//     (/dev/dxg) and Mesa ships no D3D12 driver here, so ANGLE always lands on
+//     SwiftShader. Fine for correctness checks, but ~1-2 fps at 1280x720.
+//   * CDP_URL=http://127.0.0.1:95xx - Chrome/Edge running on the Windows host
+//     (`node tools/host-gpu.mjs start`). Real GPU through ANGLE/D3D11, 60+ fps,
+//     and quality "high" is no longer auto-downgraded.
 import puppeteer from 'puppeteer-core';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
+export const CDP_URL = process.env.CDP_URL || '';
 export const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:4173/';
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -20,8 +25,48 @@ export function ensureDir(file) {
   if (dir && dir !== '.') mkdirSync(dir, { recursive: true });
 }
 
-/** Launch one headless Chrome with the software-GL flags used everywhere. */
+/**
+ * Attach to a browser we do not own (host-GPU Chrome over CDP). Closing the
+ * returned proxy closes only the pages it created and detaches - the shared
+ * browser keeps running. Pages get the same viewport the local launcher would
+ * apply so tools behave identically on both backends.
+ */
+function adopt(remote, viewport) {
+  const mine = new Set();
+  return new Proxy(remote, {
+    get(target, prop) {
+      if (prop === 'close') {
+        return async () => {
+          for (const p of mine) await p.close().catch(() => {});
+          mine.clear();
+          target.disconnect();
+        };
+      }
+      if (prop === 'newPage') {
+        return async () => {
+          const page = await target.newPage();
+          await page.setViewport(viewport).catch(() => {});
+          mine.add(page);
+          return page;
+        };
+      }
+      const value = Reflect.get(target, prop, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+}
+
+/**
+ * Launch (or attach to) one browser.
+ * Set CDP_URL to drive Chrome/Edge on the Windows host for real GPU rendering:
+ *   node tools/host-gpu.mjs start   # prints http://127.0.0.1:95xx
+ *   CDP_URL=http://127.0.0.1:95xx node tools/perf.mjs
+ */
 export async function launch({ width = 960, height = 540, dpr = 1 } = {}) {
+  if (CDP_URL) {
+    const remote = await puppeteer.connect({ browserURL: CDP_URL, defaultViewport: null });
+    return adopt(remote, { width, height, deviceScaleFactor: dpr });
+  }
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',

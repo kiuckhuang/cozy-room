@@ -7,7 +7,11 @@
     "serve": "node tools/serve.mjs",
     "shot": "node tools/screenshot.mjs",
     "build": "node tools/build-dist.mjs",
-    "test": "node tests/smoke.mjs"
+    "test": "node tests/smoke.mjs",
+    "gpu": "node tools/gpucheck.mjs",
+    "gpu:start": "node tools/host-gpu.mjs start --quiet",
+    "gpu:stop": "node tools/host-gpu.mjs stop",
+    "media": "node tools/media.mjs"
   },
   "dependencies": {
     "esbuild": "^0.25.0",
