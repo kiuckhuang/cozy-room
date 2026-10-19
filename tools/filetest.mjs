@@ -1,0 +1,14 @@
+import puppeteer from 'puppeteer-core';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+const here = dirname(fileURLToPath(import.meta.url));
+const file = 'file://' + resolve(here, '../docs/index.html') + '?q=med&hud=0&nostart=1';
+const browser = await puppeteer.launch({executablePath:process.env.CHROME || '/usr/bin/google-chrome',headless:'new',args:['--no-sandbox','--disable-dev-shm-usage','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist','--allow-file-access-from-files'],defaultViewport:{width:960,height:540}});
+const page = await browser.newPage();
+page.on('pageerror', e=>console.log('[err]',e.message));
+page.on('console', m=>{ if(m.type()==='error') console.log('[console]',m.text()); });
+await page.goto(file,{waitUntil:'load',timeout:60000});
+await new Promise(r=>setTimeout(r,9000));
+console.log(await page.evaluate(()=>({ready:window.__APP_READY__||false, errs:window.__ERRORS__||[], canvas:['width','height'].map(k=>document.querySelector('canvas')?.[k])})));
+await page.screenshot({path:'shots/docs_file.png'});
+await browser.close();

@@ -1,0 +1,19 @@
+{
+  "name": "cozy-room-fps",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "serve": "node tools/serve.mjs",
+    "shot": "node tools/screenshot.mjs",
+    "build": "node tools/build-dist.mjs",
+    "test": "node tests/smoke.mjs"
+  },
+  "dependencies": {
+    "esbuild": "^0.25.0",
+    "puppeteer-core": "^23.11.1",
+    "three": "^0.166.1"
+  },
+  "devDependencies": {},
+  "license": "MIT"
+}
