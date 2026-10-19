@@ -31,6 +31,8 @@ Takes effect in **new** shells. To apply now: `source /etc/profile.d/mesa-d3d12.
 /etc/profile.d/mesa-d3d12.sh                 environment for login shells
 /etc/bashrc                                  sources the same file for interactive non-login shells
 ~/.bashrc                                    …and for this user's own shells
+/etc/environment                             the same variables for PAM logins (no shell startup file
+                                             is read by e.g. a GUI launcher)
 ~/.config/environment.d/mesa-d3d12.conf      same variables for systemd user units
 ```
 
