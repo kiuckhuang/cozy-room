@@ -29,6 +29,8 @@ Takes effect in **new** shells. To apply now: `source /etc/profile.d/mesa-d3d12.
 /usr/local/lib64/gbm/dri_gbm.so              GBM DRI backend
 /etc/ld.so.conf.d/mesa-local.conf            makes /usr/local/lib64 visible to the loader
 /etc/profile.d/mesa-d3d12.sh                 environment for login shells
+/etc/bashrc                                  sources the same file for interactive non-login shells
+~/.bashrc                                    …and for this user's own shells
 ~/.config/environment.d/mesa-d3d12.conf      same variables for systemd user units
 ```
 
